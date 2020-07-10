@@ -18,7 +18,7 @@ cd ${BUILD_DIR}
 
 mkdir -p .profile.d
 
-DEFAULT_JULIA_VERSION=1.4.1
+DEFAULT_JULIA_VERSION=1.4.2
 JULIA_VERSION="$DEFAULT_JULIA_VERSION"
 if [[ -f Project.toml ]]; then
   curl -Lo /tmp/faq https://github.com/jzelinskie/faq/releases/download/0.0.6/faq-linux-amd64
@@ -85,4 +85,25 @@ julia --project=$(pwd) -e "using Pkg; pkg\"instantiate\";pkg\"precompile\";
   end
   close(io)"
 
+# if there is a warmup.jl file, we run it to populate precompile.jl
+# all code executed in this file will be precompiled
+if [[ -f warmup.jl ]]; then
+  echo "== warmup start =="
+  # ! means that it is allowed to fail
+  ! julia --project=$(pwd) --trace-compile="precompile.jl" warmup.jl
+  echo "== warmup done =="
+  ! wc -l precompile.jl
+  echo ""
+fi
+
+julia -e "import Pkg; Pkg.add(Pkg.PackageSpec(name=\"PackageCompiler\", version=\"1.2.1\")); using PackageCompiler;
+  Pkg.activate(\".\")
+  Pkg.instantiate()
+  proj = Pkg.project()
+  pkgs = Symbol.(keys(proj.dependencies))
+  proj.ispackage && push!(pkgs, Symbol(proj.name))
+  PackageCompiler.create_sysimage(pkgs, precompile_statements_file=isfile(\"precompile.jl\") ? \"precompile.jl\" : String[], replace_default=true)
+"
+
 cp -r ~/.julia ${BUILD_DIR}/.julia
+rm -rf ${BUILD_DIR}/.julia/registries
